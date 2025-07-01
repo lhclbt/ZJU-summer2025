@@ -36,7 +36,7 @@ class CN_Qubits:
         self.set_type(qtype)
         
     def set_type(self, qtype: int):
-        """Configure qubit parameters based on type."""
+        """附加任务可查看该数据"""
         self.qtype = qtype
         if qtype == 0:
             # superconducting
@@ -45,15 +45,15 @@ class CN_Qubits:
             self.single_gate_fd = 0.9998    # 99.98%
             self.double_gate_fd = 0.9995    # 99.95%
             self.t1 = 300e3                 # ns
-            self.t2 = 200e3                 # ns
+            self.t2 = 200e3                 # ns    # 本项目不会用到
         elif qtype == 1:
-            # neutral atom
-            self.single_gate_t = 1000       # ns
-            self.double_gate_t = 400        # ns
-            self.single_gate_fd = 0.999     # 99.9%
-            self.double_gate_fd = 0.997     # 99.7%
-            self.t1 = 7e9                   # ns  # https://www.nature.com/articles/s41586-022-04592-6/figures/7
-            self.t2 = 1e9                   # ns
+            # memory
+            self.single_gate_t = 1000       # ns    # 本项目不会用到
+            self.double_gate_t = 400        # ns    # 本项目不会用到
+            self.single_gate_fd = 0.999     # 99.9% # 本项目不会用到
+            self.double_gate_fd = 0.997     # 99.7% # 本项目不会用到
+            self.t1 = 7e9                   # ns    
+            self.t2 = 1e9                   # ns    # 本项目不会用到
         else:
             raise ValueError(f"qtype out of range: {qtype}")
         
@@ -77,15 +77,12 @@ class Gate:
     idle_aft: List[int] = field(default_factory=list)           # 门运行后idle（ns）
 
 class Q_circuit:
-    def __init__(self,num = 0, trans_fd = 0.997, trans_time = 90):
+    def __init__(self,num = 0, trans_fd = 0.997, trans_time = 120):
         self.source_file = None
         self.gate_list: List[Gate] = []
         self.logical_n = num
         self.physical_n = num
         self.max_time = 0
-        # self._logi_time: List[int] = []
-        # self.logi_idle_list = [[] for i in range(self.logical_n)]
-        # self.phys_idle_list = [[] for i in range(self.physical_n)]
         self.mapping: List[int] = None
         self.cs_coupling_graph = None
         self.cs_D = None
@@ -446,78 +443,38 @@ class Q_circuit:
         self.last_logi_gates = last_logi_gates
         return
 
-    def schedule_gates_aft_routing(self,get_layer = 1) -> None:
-        gate_list = self.gate_list
-        # 上传/下载门，上传门mem = mem_port，下载门mem = 0; 
-        # back_time = 0表示当前时间为start, = 1表示为end
-        def _mem(lq,pq,start_time,mem = 0, back_time = 0, idle = 0):
-            return Gate(
-                        number=len(gate_list),
-                        gate_type="mem",
-                        parameters=[],
-                        num_qubits = 1,
-                        trans=True,
-                        goto_mem = mem,
-                        phys_qubits=[pq],
-                        logi_qubits=[lq],
-                        start_time = start_time - back_time*self.trans_gate_time,
-                        gate_time=self.trans_gate_time,
-                        idle_aft = [idle]
-                    )
-        
-        # 从0开始
-        num = self.physical_n
-        last_gates = [-1 for i in range(num)]
-        phys_last_time = [ 0 for i in range(num)]
-        for gate in gate_list[:]:
-            if gate.goto_mem == 0:
-                end_time = gate.start_time + gate.gate_time
-                for i,lq in enumerate(gate.logi_qubits):
-                    if lq != -1:
-                        # print(i)
-                        # print(gate.logi_qubits)
-                        # print(gate.idle_aft)
-                        # print(gate)
-                        idle = gate.idle_aft[i]
-                        pq = gate.phys_qubits[i]
-                        mem_port = self.mem_port[pq]
-                        if idle >= self.max_idle:
-                            print("do mem")
-                            new_idle = idle - 2* self.trans_gate_time
-                            gate.idle_aft[i] = 0
-                            self.gate_list.append(_mem(lq,pq,end_time,mem=mem_port,idle = new_idle))
-                            new_end = end_time + idle - self.trans_gate_time
-                            self.gate_list.append(_mem(lq,pq,new_end))
-        
-        self.gate_list = gate_list
-                # 将时间轴和门轴更新
-                # phys_last_time[pq] = finish   
-                # last_gates[pq] = gate.number
-            # if gate.gate_type == "mem" and gate.logi_qubits[0] == 11:
-            #     print(gate)
-        # if get_layer: 
-        #     for gate in self.gate_list:
-        #         # 当前门层 (-1 -> 0)
-        #         current_layer = max(*(last_layer[q] for q in gate.logi_qubits),0)
-        #         # 如果是双比特门
-        #         if len(gate.logi_qubits) == 2:
-        #             current_layer = max(*(last_layer[q]+1 for q in gate.logi_qubits),0)
-        #             last_layer[gate.logi_qubits[0]]=current_layer
-        #             last_layer[gate.logi_qubits[1]]=current_layer
-        #             self.dq_list.append(gate.number)
-        #         gate_layer_list[gate.number] = current_layer
+    # 添加 内存-比特 交换门
+    def add_SWAP_gate(self,l0,l1,p0,p1,start_time,number,mem = 0, idle = 0):
+        cnq1 = CN_Qubits()
+        cnq2 = CN_Qubits()
+        return Gate(
+            number=number,
+            gate_type="SWAP",
+            parameters=[],
+            num_qubits = 2,
+            trans=False,
+            phys_qubits=[p0, p1],
+            logi_qubits=[l0, l1],
+            qubits_type=[cnq1,cnq2],
+            gate_time=cnq1.double_gate_t*3
+        )
 
-        #     # 生产layer 数组
-        #     layers = [[] for _ in range(max(gate_layer_list)+1)]
-        #     for idx, val in enumerate(gate_layer_list):
-        #         layers[val].append(idx)
-            
-        #     self.gate_layer_list = gate_layer_list
-        #     self.layers = layers
-        #     self._get_gate_dag(edges)
 
-        # self.max_time = max(phys_last_time)
-        return
+    # 添加 内存-比特 交换门
+    def add_mem_gate(self,lq,pq,start_time,number,mem = 0, back_time = 0, idle = 0):
+        return Gate(
+                    number=number,
+                    gate_type="mem",
+                    parameters=[],
+                    num_qubits = 1,
+                    trans=True,
+                    goto_mem = mem,
+                    phys_qubits=[pq],
+                    logi_qubits=[lq],
+                    start_time = start_time - back_time*self.trans_gate_time,
+                    gate_time=self.trans_gate_time,
+                    idle_aft = [idle]
+                )
 
     def blocks(self, rows: int, cols: int):
         """
