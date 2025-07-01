@@ -2,7 +2,7 @@
 
 ## 项目地址
 
-https://github.com/lhclbt/ZJU-summer2025/quantum-simulator-speedup/
+https://github.com/lhclbt/ZJU-summer2025/tree/main/quantum-simulator-speedup
 
 ## 流程说明
 
