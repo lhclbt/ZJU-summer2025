@@ -1,0 +1,8 @@
+qiskit==1.2.0
+numpy
+pandas
+matplotlib
+jupyter
+pylatexenc
+networkx
+qiskit_qasm3_import
